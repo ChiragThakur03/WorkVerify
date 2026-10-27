@@ -103,13 +103,6 @@ function inferLikelyModifiedSourceFiles(
   if (filePaths.length > 0) {
     return filePaths.filter((fp) => !/\.md$|\.lock$/i.test(fp)).slice(0, 4);
   }
-  // Fallback if recursive tree endpoint was unavailable or empty
-  if (primaryLanguage === 'TypeScript') return ['src/index.ts'];
-  if (primaryLanguage === 'JavaScript') return ['src/index.js'];
-  if (primaryLanguage === 'Python') return ['app/main.py'];
-  if (primaryLanguage === 'Go') return ['main.go'];
-  if (primaryLanguage === 'Rust') return ['src/lib.rs'];
-  if (primaryLanguage === 'Java') return ['src/Main.java'];
   return [];
 }
 
@@ -523,7 +516,9 @@ export async function collectGitHubUserEvidence(
     });
 
     const boundedSlice = sortedRepos.slice(0, 8);
-    const deepInspectCount = usedToken ? 6 : rateLimit.remaining < 18 ? 2 : 3;
+    const deepInspectCount = usedToken
+      ? boundedSlice.length
+      : Math.min(boundedSlice.length, Math.max(2, Math.floor(rateLimit.remaining / 3)));
 
     const collectedRepos = await Promise.all(
       boundedSlice.map((ghRepo, idx) =>

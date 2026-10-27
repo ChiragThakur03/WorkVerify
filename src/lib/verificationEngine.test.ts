@@ -244,3 +244,72 @@ test('Step 8 Rule: Multi-repository substantive contributions across React & Typ
   );
   assert.equal(commitCategory, 'Bug Fixing');
 });
+
+test('Zero-File Invariant: Frontend repositories with zero backend/server files yield Insufficient Evidence (score <= 15) for Node.js', () => {
+  const frontendOnlyRepo: RawRepositoryInput = {
+    id: 'repo-frontend-only',
+    name: 'stratxcel-frontend',
+    fullName: 'candidate/stratxcel-frontend',
+    htmlUrl: 'https://github.com/candidate/stratxcel-frontend',
+    description: 'React + Vite frontend application',
+    isFork: false,
+    primaryLanguage: 'TypeScript',
+    languages: { TypeScript: 95000, CSS: 5000 },
+    filePaths: [
+      'package.json',
+      'tsconfig.json',
+      'vite.config.ts',
+      'src/App.tsx',
+      'src/main.tsx',
+      'src/components/Hero.tsx',
+      'src/components/About.tsx',
+      'src/hooks/useSmoothScroll.ts',
+      'src/index.css',
+    ],
+    manifests: [
+      {
+        fileName: 'package.json',
+        dependencies: ['react', 'react-dom', 'framer-motion'],
+        devDependencies: ['vite', 'typescript'],
+      },
+    ],
+    commits: [
+      {
+        sha: 'fe1234567890aaaa',
+        message: 'feat: add interactive hero section and smooth scroll',
+        date: '2026-10-15T12:00:00Z',
+        authorName: 'Candidate Dev',
+        authorLogin: 'candidate',
+        htmlUrl: 'https://github.com/candidate/stratxcel-frontend/commit/fe1234567890aaaa',
+        additions: 150,
+        deletions: 12,
+        filesChanged: ['src/App.tsx', 'src/components/Hero.tsx'],
+      },
+    ],
+    pullRequests: [],
+    starsCount: 3,
+    hasReadme: true,
+    createdAt: '2026-08-01T00:00:00Z',
+    pushedAt: '2026-10-15T12:00:00Z',
+  };
+
+  const normalized = normalizeAndAnalyzeRepository(frontendOnlyRepo, 'candidate', 'Candidate Dev');
+
+  // React should have verified source files
+  const reactAssessment = evaluateSkillEvidence('React', true, [normalized], SAMPLE_NOW);
+  assert.ok(reactAssessment.breakdown.sourceFilesSignal > 0);
+
+  // Node.js MUST NOT be verified: zero server files, zero backend manifests
+  const nodeAssessment = evaluateSkillEvidence('Node.js', true, [normalized], SAMPLE_NOW);
+  assert.equal(nodeAssessment.evidenceBand, 'Insufficient Evidence');
+  assert.equal(nodeAssessment.breakdown.sourceFilesSignal, 0);
+  assert.ok(
+    nodeAssessment.evidenceScore <= 15,
+    `Expected Node.js score <= 15 for frontend repo, got ${nodeAssessment.evidenceScore}`
+  );
+  assert.equal(
+    nodeAssessment.supportingRepos.length,
+    0,
+    'Frontend repo with 0 Node.js files must not be listed as a supporting repo for Node.js'
+  );
+});

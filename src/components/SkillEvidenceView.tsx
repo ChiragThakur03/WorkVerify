@@ -670,7 +670,12 @@ export const SkillEvidenceView: React.FC<SkillEvidenceViewProps> = ({
                           )}
                         </div>
                         <div className="mt-0.5 text-[11px] text-[#526362] font-mono">
-                          {repo.matchingFilesCount} files · {repo.attributedCommitsCount} commits
+                          {repo.matchingFilesCount > 0
+                            ? `${repo.matchingFilesCount} code files`
+                            : repo.manifestNames.length > 0
+                            ? `manifest: ${repo.manifestNames[0]}`
+                            : '0 code files'}{' '}
+                          · {repo.attributedCommitsCount} commits
                         </div>
                       </div>
                     ))}

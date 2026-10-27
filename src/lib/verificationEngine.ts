@@ -219,10 +219,34 @@ export const SUPPORTED_TECHNOLOGIES: TechRuleDefinition[] = [
     canonicalName: 'Node.js',
     aliases: ['nodejs', 'node', 'node.js', 'express'],
     category: 'Framework',
-    extensions: ['.ts', '.js', '.mjs'],
-    manifestPackages: ['express', 'fastify', 'nestjs', '@nestjs/core', 'koa', 'ws', 'dotenv'],
+    extensions: ['.ts', '.js', '.mjs', '.cjs'],
+    manifestPackages: [
+      'express',
+      'fastify',
+      'nestjs',
+      '@nestjs/core',
+      'koa',
+      'hapi',
+      'restify',
+      'socket.io',
+      'ws',
+      'hono',
+      '@apollo/server',
+      'apollo-server-express',
+    ],
     languageKeys: [],
-    pathPatterns: [/server\.(ts|js)$/i, /routes\/.*\.(ts|js)$/i, /controllers\/.*\.(ts|js)$/i, /middleware\/.*\.(ts|js)$/i],
+    pathPatterns: [
+      /server\.(ts|js|mjs)$/i,
+      /app\.(ts|js|mjs)$/i,
+      /api\/.*\.(ts|js|mjs)$/i,
+      /routes\/.*\.(ts|js|mjs)$/i,
+      /controllers\/.*\.(ts|js|mjs)$/i,
+      /middleware\/.*\.(ts|js|mjs)$/i,
+      /services\/.*\.(ts|js|mjs)$/i,
+      /backend\/.*\.(ts|js|mjs)$/i,
+      /src\/server\/.*\.(ts|js|mjs)$/i,
+      /server\/.*\.(ts|js|mjs)$/i,
+    ],
   },
   {
     canonicalName: 'Python',
@@ -433,6 +457,102 @@ export function resolveCanonicalSkill(inputSkill: string): TechRuleDefinition {
 }
 
 /**
+ * Evaluates whether a given file path is a genuine non-vendor source file for the specified technology.
+ * Strictly separates server-side runtimes (Node.js) from client-side frameworks (React) and
+ * prevents generic language files from falsely matching framework claims.
+ */
+export function isSourceFileForTech(
+  filePath: string,
+  tech: TechRuleDefinition,
+  fromManifest: boolean
+): boolean {
+  const lowerPath = filePath.toLowerCase();
+
+  // Special precision check for Node.js:
+  if (tech.canonicalName === 'Node.js') {
+    // Strictly exclude frontend UI components, client pages, browser hooks, and UI assets
+    if (
+      lowerPath.includes('component') ||
+      lowerPath.includes('/pages/') ||
+      lowerPath.includes('\\pages\\') ||
+      lowerPath.includes('/hooks/') ||
+      lowerPath.includes('\\hooks\\') ||
+      lowerPath.includes('/views/') ||
+      lowerPath.includes('\\views\\') ||
+      lowerPath.includes('/styles/') ||
+      lowerPath.includes('\\styles\\') ||
+      lowerPath.endsWith('.tsx') ||
+      lowerPath.endsWith('.jsx') ||
+      lowerPath.endsWith('.css') ||
+      lowerPath.endsWith('.scss') ||
+      lowerPath.endsWith('.html')
+    ) {
+      return false;
+    }
+
+    // Explicit server/backend path pattern match
+    const patternMatch = tech.pathPatterns.some((pat) => pat.test(filePath));
+    if (patternMatch) return true;
+
+    // If manifest contains genuine backend framework and file is in server/api/route/backend structure
+    if (
+      fromManifest &&
+      (lowerPath.includes('server') ||
+        lowerPath.includes('api') ||
+        lowerPath.includes('worker') ||
+        lowerPath.includes('route') ||
+        lowerPath.includes('controller') ||
+        lowerPath.includes('middleware') ||
+        lowerPath.includes('service') ||
+        lowerPath.includes('backend') ||
+        lowerPath.includes('src/server') ||
+        lowerPath.includes('server/'))
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Special precision check for React vs generic TypeScript/JavaScript:
+  if (tech.canonicalName === 'React') {
+    const patternMatch = tech.pathPatterns.some((pat) => pat.test(filePath));
+    if (patternMatch) return true;
+    if (
+      (lowerPath.endsWith('.tsx') || lowerPath.endsWith('.jsx')) &&
+      (fromManifest ||
+        lowerPath.includes('component') ||
+        lowerPath.includes('app') ||
+        lowerPath.includes('page') ||
+        lowerPath.includes('view'))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // Next.js:
+  if (tech.canonicalName === 'Next.js') {
+    const patternMatch = tech.pathPatterns.some((pat) => pat.test(filePath));
+    if (patternMatch) return true;
+    if (
+      fromManifest &&
+      (lowerPath.includes('pages/') ||
+        lowerPath.includes('app/') ||
+        lowerPath.includes('next.config'))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // Standard extension and path pattern match
+  const extMatch = tech.extensions.some((ext) => lowerPath.endsWith(ext));
+  const patternMatch = tech.pathPatterns.some((pat) => pat.test(filePath));
+  return extMatch || patternMatch;
+}
+
+/**
  * Step 4, 5 & 6: Normalizes a raw repository, filters vendor files, attributes commits,
  * and detects technology signals within that repository.
  */
@@ -563,61 +683,29 @@ export function normalizeAndAnalyzeRepository(
         tech.languageKeys.some((k) => k.toLowerCase() === langKey.toLowerCase())
       );
 
-    // Match meaningful source files for this technology
-    const matchingSourceFiles = meaningfulFilePaths.filter((filePath) => {
-      const lowerPath = filePath.toLowerCase();
-      const extMatch = tech.extensions.some((ext) => lowerPath.endsWith(ext));
-      const patternMatch = tech.pathPatterns.some((pat) => pat.test(filePath));
+    // Match meaningful source files for this technology using strict classifier
+    const matchingSourceFiles = meaningfulFilePaths.filter((filePath) =>
+      isSourceFileForTech(filePath, tech, fromManifest)
+    );
 
-      // Special precision check for React vs generic TypeScript/JavaScript:
-      // For React, require .tsx/.jsx or React-specific path patterns or manifest presence
-      if (tech.canonicalName === 'React') {
-        if (patternMatch) return true;
-        if ((lowerPath.endsWith('.tsx') || lowerPath.endsWith('.jsx')) && (fromManifest || lowerPath.includes('component') || lowerPath.includes('app'))) {
-          return true;
-        }
-        return false;
-      }
-
-      // Special precision check for Node.js:
-      if (tech.canonicalName === 'Node.js') {
-        if (patternMatch) return true;
-        if (fromManifest && (lowerPath.includes('server') || lowerPath.includes('api') || lowerPath.includes('worker') || lowerPath.includes('route'))) {
-          return true;
-        }
-        return false;
-      }
-
-      return extMatch || patternMatch;
-    });
-
-    // Match candidate-attributed commits that touched matching files for this tech
+    // Match candidate-attributed commits that touched genuine source files for this tech
     const matchingCommits = processedCommits.filter((commit) => {
       if (!commit.isCandidateAttributed) return false;
-      return commit.meaningfulFilesChanged.some((changedFile) => {
-        const lowerFile = changedFile.toLowerCase();
-        if (tech.canonicalName === 'React') {
-          return (
-            lowerFile.endsWith('.tsx') ||
-            lowerFile.endsWith('.jsx') ||
-            tech.pathPatterns.some((p) => p.test(changedFile))
-          );
-        }
-        return (
-          tech.extensions.some((ext) => lowerFile.endsWith(ext)) ||
-          tech.pathPatterns.some((p) => p.test(changedFile))
-        );
-      });
+      return commit.meaningfulFilesChanged.some((changedFile) =>
+        isSourceFileForTech(changedFile, tech, fromManifest)
+      );
     });
 
     const substantiveTechCommits = matchingCommits.filter((c) => c.isSubstantiveChange);
 
-    if (
-      fromManifest ||
-      fromLanguageMetadata ||
+    // Only detect technology in repository if there is concrete evidence:
+    // Either verified source files, manifest presence, or candidate-attributed commits
+    const hasEvidence =
       matchingSourceFiles.length > 0 ||
-      matchingCommits.length > 0
-    ) {
+      fromManifest ||
+      (fromLanguageMetadata && matchingCommits.length > 0);
+
+    if (hasEvidence) {
       detectedTechnologies.push({
         skillName: tech.canonicalName,
         category: tech.category,
@@ -768,15 +856,21 @@ export function evaluateSkillEvidence(
       }
     }
 
-    supportingRepos.push({
-      repoName: repo.name,
-      fullName: repo.fullName,
-      htmlUrl: repo.htmlUrl,
-      isFork: repo.isFork,
-      matchingFilesCount: signal.matchingSourceFiles.length,
-      attributedCommitsCount: signal.attributedCommitCount,
-      manifestNames: signal.manifestSources,
-    });
+    const hasConcreteSupport =
+      signal.matchingSourceFiles.length > 0 ||
+      signal.manifestSources.length > 0;
+
+    if (hasConcreteSupport) {
+      supportingRepos.push({
+        repoName: repo.name,
+        fullName: repo.fullName,
+        htmlUrl: repo.htmlUrl,
+        isFork: repo.isFork,
+        matchingFilesCount: signal.matchingSourceFiles.length,
+        attributedCommitsCount: signal.attributedCommitCount,
+        manifestNames: signal.manifestSources,
+      });
+    }
 
     for (const c of signal.attributedCommitShas) {
       const fullCommit = repo.commits.find((rc) => rc.sha === c.sha);
@@ -881,23 +975,43 @@ export function evaluateSkillEvidence(
     multiRepoConsistency +
     recencyAndContinuity;
 
-  // HARD GATE 1: Dependency-only or zero candidate-attributed commits -> Insufficient Evidence
-  if (attributedWorkSignal === 0 || totalAttributedCommits === 0) {
+  // HARD INVARIANT GATE 0: Zero non-vendor source files in original repositories
+  // If zero matching source files exist, candidate cannot receive credit for work they never authored.
+  if (totalMatchingFilesInOriginal === 0) {
+    if (hasManifestInOriginal) {
+      totalScore = Math.min(totalScore, 15);
+    } else {
+      totalScore = 0;
+    }
+  }
+  // HARD INVARIANT GATE 1: Dependency-only or zero candidate-attributed commits -> Insufficient Evidence
+  else if (attributedWorkSignal === 0 || totalAttributedCommits === 0) {
     totalScore = Math.min(totalScore, 15);
   }
-  // HARD GATE 2: No substantive commits -> cannot exceed Weak Evidence (max 42)
+  // HARD INVARIANT GATE 2: Fewer than 3 matching source files cannot exceed Weak Evidence (max 35)
+  else if (totalMatchingFilesInOriginal < 3) {
+    totalScore = Math.min(totalScore, 35);
+  }
+  // HARD INVARIANT GATE 3: No substantive commits -> cannot exceed Weak Evidence (max 42)
   else if (totalSubstantiveCommits === 0) {
     totalScore = Math.min(totalScore, 42);
   }
+  // HARD INVARIANT GATE 4: Fewer than 5 matching source files cannot achieve Strong Evidence (max 65)
+  else if (totalMatchingFilesInOriginal < 5) {
+    totalScore = Math.min(totalScore, 65);
+  }
 
   let evidenceBand: EvidenceBand = 'Insufficient Evidence';
-  if (
+  if (totalMatchingFilesInOriginal === 0) {
+    evidenceBand = 'Insufficient Evidence';
+  } else if (
     totalScore >= 75 &&
     attributedWorkSignal >= 18 &&
-    sourceFilesSignal >= 12
+    sourceFilesSignal >= 12 &&
+    totalMatchingFilesInOriginal >= 5
   ) {
     evidenceBand = 'Strong Evidence';
-  } else if (totalScore >= 45 && attributedWorkSignal >= 12) {
+  } else if (totalScore >= 45 && attributedWorkSignal >= 12 && totalMatchingFilesInOriginal >= 3) {
     evidenceBand = 'Moderate Evidence';
   } else if (totalScore >= 20 && totalAttributedCommits >= 1) {
     evidenceBand = 'Weak Evidence';

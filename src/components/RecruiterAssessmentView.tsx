@@ -828,8 +828,13 @@ export const RecruiterAssessmentView: React.FC<RecruiterAssessmentViewProps> = (
                                   >
                                     <FolderGit2 className="w-3.5 h-3.5" />
                                     <span>
-                                      {sr.repoName} ({sr.matchingFilesCount} files,{' '}
-                                      {sr.attributedCommitsCount} commits)
+                                      {sr.repoName}{' '}
+                                      <span className="opacity-80">
+                                        ({sr.matchingFilesCount > 0
+                                          ? `${sr.matchingFilesCount} code ${sr.matchingFilesCount === 1 ? 'file' : 'files'}`
+                                          : '0 code files'}
+                                        , {sr.attributedCommitsCount} {sr.attributedCommitsCount === 1 ? 'commit' : 'commits'})
+                                      </span>
                                     </span>
                                     <ExternalLink className="w-3 h-3" />
                                   </a>
