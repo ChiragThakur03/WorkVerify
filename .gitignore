@@ -1,0 +1,13 @@
+node_modules/
+build/
+dist/
+coverage/
+.vercel/
+.data/
+.aistudio/
+metadata.json
+.DS_Store
+*.log
+.env*
+!.env.example
+
