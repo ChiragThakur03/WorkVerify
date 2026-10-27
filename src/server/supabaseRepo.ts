@@ -488,7 +488,7 @@ function saveStore(state: PersistentStoreState, skipRemoteSync = false): void {
   }
 }
 
-async function syncStateToSupabase(state: PersistentStoreState): Promise<void> {
+export async function syncStateToSupabase(state: PersistentStoreState): Promise<void> {
   const sb = getSupabaseClient();
   if (!sb) return;
   try {
@@ -502,8 +502,8 @@ async function syncStateToSupabase(state: PersistentStoreState): Promise<void> {
   }
 }
 
-export async function ensureSupabaseHydrated(): Promise<void> {
-  if (supabaseHydrated) return;
+export async function ensureSupabaseHydrated(force = false): Promise<void> {
+  if (supabaseHydrated && !force) return;
   supabaseHydrated = true;
   const sb = getSupabaseClient();
   if (!sb) return;
@@ -529,6 +529,50 @@ export async function ensureSupabaseHydrated(): Promise<void> {
           : [],
       };
       saveStore(hydrated, true);
+    } else {
+      // Fallback: Check wv_users in Supabase if wv_kv_store is not populated
+      const { data: userRows, error: userErr } = await sb.from('wv_users').select('*').limit(200);
+      if (!userErr && Array.isArray(userRows) && userRows.length > 0) {
+        const store = loadStore();
+        for (const row of userRows) {
+          if (!store.users.some((u) => u.id === row.id)) {
+            store.users.push(
+              normalizeStoredUserRecord({
+                id: row.id,
+                email: row.email,
+                passwordHashServerOnly: row.password_hash,
+                emailVerified: row.email_verified,
+                googleId: row.google_id,
+                linkedProviders: row.linked_providers_json || [],
+                fullName: row.full_name,
+                roleTitle: row.role_title,
+                bio: row.bio || '',
+                activeRole: row.active_role || 'developer',
+                onboarding:
+                  row.onboarding_answers_json ||
+                  createDefaultOnboardingState('developer', false),
+                githubUsername: row.github_username || '',
+                githubConnected: row.github_connected || false,
+                githubAvatarUrl: row.github_avatar_url || '',
+                githubProfileUrl: row.github_profile_url || '',
+                githubConnectedAt: row.github_connected_at,
+                profileSlug: row.profile_slug,
+                isPublicProfile: row.is_public_profile || false,
+                publishedAt: row.published_at,
+                lastAnalyzedAt: row.last_analyzed_at,
+                claimedSkills: [],
+                rawRepositories: [],
+                normalizedRepositories: [],
+                skillAssessments: [],
+                roleRecommendations: [],
+                jobMatchReports: [],
+                createdAt: row.created_at || new Date().toISOString(),
+              })
+            );
+          }
+        }
+        saveStore(store, true);
+      }
     }
   } catch (err) {
     console.warn('Supabase cold-start hydration warning:', err instanceof Error ? err.message : err);
@@ -560,7 +604,7 @@ export function sanitizeUserForClient(user: UserAccountRecord) {
   };
 }
 
-async function syncUserToSupabase(user: UserAccountRecord, log?: AuditLogEntry): Promise<void> {
+export async function syncUserToSupabase(user: UserAccountRecord, log?: AuditLogEntry): Promise<void> {
   const sb = getSupabaseClient();
   if (!sb) return;
 
@@ -627,9 +671,59 @@ async function deleteUserFromSupabase(userId: string): Promise<void> {
   }
 }
 
+function getSessionSigningSecret(): string {
+  const secret = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.GOOGLE_CLIENT_SECRET ||
+    'workverify_session_signing_secret_key_v1'
+  ).trim();
+  return secret;
+}
+
+export function signSessionToken(userId: string, email: string): string {
+  const payload = {
+    uid: userId,
+    em: (email || '').toLowerCase().trim(),
+    iat: Date.now(),
+    exp: Date.now() + 7 * 24 * 3600 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const secret = getSessionSigningSecret();
+  const sig = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
+  return `wv_sess_${encoded}.${sig}`;
+}
+
+export function verifySessionToken(token: string): { userId: string; email: string } | null {
+  if (!token || !token.startsWith('wv_sess_')) return null;
+  const raw = token.slice('wv_sess_'.length);
+  const dotIdx = raw.indexOf('.');
+  if (dotIdx === -1) return null;
+  const encoded = raw.slice(0, dotIdx);
+  const sig = raw.slice(dotIdx + 1);
+  if (!encoded || !sig) return null;
+
+  const secret = getSessionSigningSecret();
+  const expectedSig = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
+
+  if (sig.length !== expectedSig.length) return null;
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+      return null;
+    }
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!payload || !payload.uid) return null;
+    if (payload.exp && Number(payload.exp) < Date.now()) return null;
+    return { userId: String(payload.uid), email: String(payload.em || '') };
+  } catch {
+    return null;
+  }
+}
+
 function createSessionForUser(store: PersistentStoreState, userId: string): SessionRecord {
   const nowIso = new Date().toISOString();
-  const token = `wv_sess_${crypto.randomBytes(24).toString('hex')}`;
+  const user = store.users.find((u) => u.id === userId);
+  const token = signSessionToken(userId, user?.email || '');
   const session: SessionRecord = {
     token,
     userId,
@@ -1117,14 +1211,14 @@ export const dbRepository = {
     return computed;
   },
 
-  authenticateOrLinkGoogle(payload: {
+  async authenticateOrLinkGoogle(payload: {
     googleId: string;
     email: string;
     emailVerified: boolean;
     fullName: string;
     avatarUrl?: string;
     currentUserId?: string | null;
-  }): { user: UserAccountRecord; token: string; linkedToExisting: boolean } {
+  }): Promise<{ user: UserAccountRecord; token: string; linkedToExisting: boolean }> {
     const store = loadStore();
     const cleanEmail = (payload.email || '').trim().toLowerCase();
     const googleId = (payload.googleId || '').trim();
@@ -1187,7 +1281,8 @@ export const dbRepository = {
       };
       store.auditLogs.unshift(log);
       saveStore(store);
-      void syncUserToSupabase(computed, log);
+      await syncStateToSupabase(store);
+      await syncUserToSupabase(computed, log);
 
       return { user: computed, token: session.token, linkedToExisting: true };
     }
@@ -1205,6 +1300,8 @@ export const dbRepository = {
       const computed = recomputeUserAnalysis(existing, userJds);
       const session = createSessionForUser(store, computed.id);
       saveStore(store);
+      await syncStateToSupabase(store);
+      await syncUserToSupabase(computed);
       return { user: computed, token: session.token, linkedToExisting: true };
     }
 
@@ -1251,7 +1348,8 @@ export const dbRepository = {
       };
       store.auditLogs.unshift(log);
       saveStore(store);
-      void syncUserToSupabase(computed, log);
+      await syncStateToSupabase(store);
+      await syncUserToSupabase(computed, log);
       return { user: computed, token: session.token, linkedToExisting: true };
     }
 
@@ -1311,7 +1409,8 @@ export const dbRepository = {
     store.users.push(newUser);
     store.auditLogs.unshift(log);
     saveStore(store);
-    void syncUserToSupabase(newUser, log);
+    await syncStateToSupabase(store);
+    await syncUserToSupabase(newUser, log);
 
     return { user: newUser, token: session.token, linkedToExisting: false };
   },
@@ -1501,18 +1600,79 @@ export const dbRepository = {
 
   getUserBySessionToken(token?: string | null): UserAccountRecord | null {
     if (!token || !token.trim()) return null;
-    const store = loadStore();
     const cleanToken = token.trim();
-    const session = store.sessions.find((s) => s.token === cleanToken);
-    if (!session) return null;
+    const store = loadStore();
 
-    if (new Date(session.expiresAt).getTime() < Date.now()) {
+    // Check if session exists in memory store and has expired
+    const inStoreSession = store.sessions.find((s) => s.token === cleanToken);
+    if (inStoreSession && new Date(inStoreSession.expiresAt).getTime() < Date.now()) {
       store.sessions = store.sessions.filter((s) => s.token !== cleanToken);
       saveStore(store);
       return null;
     }
 
-    const user = store.users.find((u) => u.id === session.userId);
+    // Cryptographic stateless HMAC verification
+    const verified = verifySessionToken(cleanToken);
+    const targetUserId = inStoreSession?.userId || verified?.userId;
+    const targetEmail = verified?.email;
+
+    if (!targetUserId && !targetEmail) {
+      return null;
+    }
+
+    // Match in store by user ID or verified email
+    let user = store.users.find(
+      (u) =>
+        (targetUserId && u.id === targetUserId) ||
+        (targetEmail && u.email.toLowerCase() === targetEmail.toLowerCase())
+    );
+
+    // If cryptographically verified token but user was not found in ephemeral memory
+    // (e.g. serverless cold start), synthesize safe fallback user record so reload NEVER signs out
+    if (!user && verified) {
+      const cleanEmail = (verified.email || '').toLowerCase().trim();
+      const displayName = cleanEmail ? cleanEmail.split('@')[0] : 'User';
+      const fallbackUser: UserAccountRecord = {
+        id: verified.userId,
+        email: cleanEmail || `${verified.userId}@workverify.internal`,
+        emailVerified: true,
+        fullName: displayName,
+        roleTitle: 'Software Engineer',
+        bio: '',
+        activeRole: 'developer',
+        onboarding: createDefaultOnboardingState('developer', false),
+        githubUsername: '',
+        githubConnected: false,
+        githubAvatarUrl: '',
+        githubProfileUrl: '',
+        githubConnectedAt: null,
+        profileSlug: generateUniqueSlug(displayName, store.users),
+        isPublicProfile: false,
+        publishedAt: null,
+        lastAnalyzedAt: null,
+        claimedSkills: [],
+        rawRepositories: [],
+        normalizedRepositories: [],
+        skillAssessments: [],
+        roleRecommendations: [],
+        jobMatchReports: [],
+        linkedProviders: [
+          {
+            provider: 'google',
+            providerId: verified.userId,
+            email: cleanEmail,
+            displayName,
+            verified: true,
+            linkedAt: new Date().toISOString(),
+          },
+        ],
+        createdAt: new Date().toISOString(),
+      };
+      store.users.push(fallbackUser);
+      saveStore(store, true);
+      user = fallbackUser;
+    }
+
     if (!user) return null;
 
     const userJds = store.jobDescriptions.filter((j) => j.userId === user.id);
@@ -1956,7 +2116,7 @@ export const dbRepository = {
     return updatedUser;
   },
 
-  saveCollectedGitHubData(
+  async saveCollectedGitHubData(
     userId: string,
     payload: {
       githubUsername: string;
@@ -1969,7 +2129,7 @@ export const dbRepository = {
       rateLimitRemaining?: number;
       collectionNote?: string;
     }
-  ): UserAccountRecord {
+  ): Promise<UserAccountRecord> {
     const store = loadStore();
     const idx = store.users.findIndex((u) => u.id === userId);
     if (idx === -1) throw new Error('User not found');
@@ -2031,7 +2191,8 @@ export const dbRepository = {
     };
     store.auditLogs.unshift(log);
     saveStore(store);
-    void syncUserToSupabase(updatedUser, log);
+    await syncStateToSupabase(store);
+    await syncUserToSupabase(updatedUser, log);
     return updatedUser;
   },
 

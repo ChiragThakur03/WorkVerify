@@ -7,6 +7,8 @@ import {
   sanitizeUserForClient,
   getSupabaseStatus,
   ensureSupabaseHydrated,
+  syncStateToSupabase,
+  syncUserToSupabase,
   UserAccountRecord,
 } from './src/server/supabaseRepo.ts';
 import {
@@ -98,16 +100,18 @@ function extractAnonSessionId(req: express.Request): string | null {
 }
 
 function setSessionCookie(res: express.Response, token: string): void {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
   const cookieValue = `wv_session=${encodeURIComponent(
     token
-  )}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${7 * 24 * 3600}`;
+  )}; Path=/; HttpOnly; SameSite=Lax; ${isProd ? 'Secure; ' : ''}Max-Age=${7 * 24 * 3600}`;
   res.setHeader('Set-Cookie', cookieValue);
 }
 
 function clearSessionCookie(res: express.Response): void {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
   res.setHeader(
     'Set-Cookie',
-    'wv_session=; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0'
+    `wv_session=; Path=/; HttpOnly; SameSite=Lax; ${isProd ? 'Secure; ' : ''}Max-Age=0`
   );
 }
 
@@ -197,7 +201,7 @@ function registerApiRoutes(app: express.Express) {
   // ==========================================================================
   // 2. Authentication, Email Verification & Password Recovery Endpoints
   // ==========================================================================
-  app.post('/api/auth/register', (req, res) => {
+  app.post('/api/auth/register', async (req, res) => {
     try {
       const { email, password, fullName, roleTitle } = req.body || {};
       const { user, token, verificationCode, verificationToken } =
@@ -208,6 +212,7 @@ function registerApiRoutes(app: express.Express) {
           roleTitle,
         });
       setSessionCookie(res, token);
+      await syncUserToSupabase(user);
       res.status(201).json({
         authenticated: true,
         token,
@@ -223,11 +228,12 @@ function registerApiRoutes(app: express.Express) {
     }
   });
 
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body || {};
       const { user, token } = dbRepository.loginUser({ email, password });
       setSessionCookie(res, token);
+      await syncUserToSupabase(user);
       res.json({
         authenticated: true,
         token,
@@ -1107,7 +1113,7 @@ function registerApiRoutes(app: express.Express) {
           currentUser.oauthAccessTokenServerOnly,
           true
         );
-        const updated = dbRepository.saveCollectedGitHubData(currentUser.id, {
+        const updated = await dbRepository.saveCollectedGitHubData(currentUser.id, {
           githubUsername: collected.owner,
           githubAvatarUrl: currentUser.githubAvatarUrl || '',
           githubProfileUrl: `https://github.com/${collected.owner}`,
@@ -1130,7 +1136,7 @@ function registerApiRoutes(app: express.Express) {
         true
       );
 
-      const updated = dbRepository.saveCollectedGitHubData(currentUser.id, {
+      const updated = await dbRepository.saveCollectedGitHubData(currentUser.id, {
         githubUsername: collected.username,
         githubAvatarUrl: collected.avatarUrl,
         githubProfileUrl: collected.profileUrl,
@@ -1352,7 +1358,7 @@ function registerApiRoutes(app: express.Express) {
           throw new Error('Could not retrieve verified email and profile from Google.');
         }
 
-        const { token: newSessionToken } = dbRepository.authenticateOrLinkGoogle({
+        const { token: newSessionToken } = await dbRepository.authenticateOrLinkGoogle({
           googleId: String(googleProfile.sub),
           email: String(googleProfile.email),
           emailVerified: Boolean(googleProfile.email_verified),
@@ -1368,6 +1374,9 @@ function registerApiRoutes(app: express.Express) {
               <h3>Google Account Connected</h3>
               <p>Authentication complete. Returning to WorkVerify...</p>
               <script>
+                try {
+                  localStorage.setItem('wv_auth_session_token', ${JSON.stringify(newSessionToken)});
+                } catch (e) {}
                 if (window.opener) {
                   window.opener.postMessage({
                     type: 'OAUTH_AUTH_SUCCESS',
@@ -1469,7 +1478,7 @@ function registerApiRoutes(app: express.Express) {
         setSessionCookie(res, reg.token);
       }
 
-      dbRepository.saveCollectedGitHubData(currentUser.id, {
+      await dbRepository.saveCollectedGitHubData(currentUser.id, {
         githubUsername: collected.username,
         githubAvatarUrl: collected.avatarUrl,
         githubProfileUrl: collected.profileUrl,
@@ -1487,6 +1496,9 @@ function registerApiRoutes(app: express.Express) {
             <h3>GitHub Connected Successfully</h3>
             <p>Your public repositories and commit evidence have been linked to your WorkVerify account. Closing window...</p>
             <script>
+              try {
+                localStorage.setItem('wv_auth_session_token', ${JSON.stringify(sessionToken || '')});
+              } catch (e) {}
               if (window.opener) {
                 window.opener.postMessage({
                   type: 'OAUTH_AUTH_SUCCESS',
