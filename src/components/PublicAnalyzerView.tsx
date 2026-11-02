@@ -13,6 +13,12 @@ import {
   ChevronUp,
   Briefcase,
   ClipboardCheck,
+  Sparkles,
+  ShieldCheck,
+  Layers,
+  CheckCircle2,
+  XCircle,
+  BarChart3,
 } from 'lucide-react';
 import {
   SingleRepositoryInspectionReport,
@@ -25,6 +31,12 @@ import {
 import { apiFetch } from '../lib/apiClient';
 import {
   EvidenceMeterBar,
+  MatchScoreRing,
+  RequirementCoverageDonut,
+  EvidenceRadarChart,
+  TechStackDistributionBar,
+  AuthorshipAttributionGauge,
+  EngineeringRigorGrid,
 } from './VisualAssets';
 
 interface PublicProfileReport {
@@ -693,44 +705,35 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
               </div>
             </div>
 
-            {/* Key Evidence Indicators Strip (No Nested Boxes) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pt-4 border-t border-[#E2E8E7] text-xs">
-              <div>
-                <div className="text-[#526362]">Detected Technologies</div>
-                <div className="text-sm font-semibold text-[#111919] mt-1 truncate">
-                  {singleRepoReport.skillAssessments
-                    .slice(0, 4)
-                    .map((s) => s.skillName)
-                    .join(', ') || 'None detected'}
+            {/* Visual Primary Key Evidence Strip */}
+            <div className="space-y-4 pt-4 border-t border-[#E2E8E7]">
+              <AuthorshipAttributionGauge
+                ownerCommits={singleRepoReport.ownershipVsAttribution.ownerAttributedCommits}
+                totalCommits={singleRepoReport.ownershipVsAttribution.totalCommitsSampled}
+                ownerLogin={singleRepoReport.ownerLogin}
+                distinctAuthorsCount={singleRepoReport.ownershipVsAttribution.distinctAuthors.length}
+              />
+
+              <EngineeringRigorGrid
+                hasTests={singleRepoReport.projectStructureSignals.hasTests}
+                testFilesCount={singleRepoReport.projectStructureSignals.testFiles.length}
+                hasCiCd={singleRepoReport.projectStructureSignals.hasCiCd}
+                hasContainer={singleRepoReport.projectStructureSignals.hasContainerConfig}
+                hasTypes={singleRepoReport.projectStructureSignals.hasTypeConfig}
+                manifestsCount={singleRepoReport.projectStructureSignals.manifestsFound.length}
+              />
+
+              {singleRepoReport.skillAssessments.length > 0 && (
+                <div className="p-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl">
+                  <TechStackDistributionBar
+                    items={singleRepoReport.skillAssessments.slice(0, 6).map((s) => ({
+                      name: s.skillName,
+                      count: s.evidenceScore,
+                    }))}
+                    title="Detected Repository Technologies"
+                  />
                 </div>
-              </div>
-              <div>
-                <div className="text-[#526362]">Owner Commit Attribution</div>
-                <div className="text-sm font-mono font-semibold text-[#0B4F4A] mt-1">
-                  {singleRepoReport.ownershipVsAttribution.ownerAttributedCommits}/
-                  {singleRepoReport.ownershipVsAttribution.totalCommitsSampled} commits (
-                  {singleRepoReport.ownershipVsAttribution.ownerAttributionRatio}%)
-                </div>
-              </div>
-              <div>
-                <div className="text-[#526362]">Meaningful Source Files</div>
-                <div className="text-sm font-mono font-semibold text-[#111919] mt-1">
-                  {singleRepoReport.repository.meaningfulFilePaths.length} files
-                </div>
-              </div>
-              <div>
-                <div className="text-[#526362]">Engineering Signals</div>
-                <div className="text-sm font-medium text-[#111919] mt-1">
-                  {[
-                    singleRepoReport.projectStructureSignals.hasTests && 'Tests',
-                    singleRepoReport.projectStructureSignals.hasCiCd && 'CI/CD',
-                    singleRepoReport.projectStructureSignals.hasContainerConfig && 'Docker',
-                    singleRepoReport.projectStructureSignals.hasTypeConfig && 'Strict Types',
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || 'Standard source tree'}
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -738,7 +741,7 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
           <div className="border-b border-[#E2E8E7] bg-[#F8F9F8] px-6 flex items-center gap-6 overflow-x-auto">
             {(
               [
-                ['overview', 'Overview'],
+                ['overview', 'Overview & Visual Dashboard'],
                 ['skills', `Skills & Evidence (${singleRepoReport.skillAssessments.length})`],
                 ['repositories', 'Repository Structure'],
                 ['contributions', `Contributions (${singleRepoReport.repository.commits.length})`],
@@ -764,10 +767,121 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
           <div className="p-6">
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {/* 5-Signal Radar Chart + Top Skills Visual Split */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left Column: Top Skill Visual Cards */}
+                  <div className="lg:col-span-7 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-base font-bold text-[#111919]">
+                        Verified Repository Skills
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('skills')}
+                        className="text-xs font-semibold text-[#0B4F4A] hover:underline"
+                      >
+                        View all {singleRepoReport.skillAssessments.length} skills →
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      {singleRepoReport.skillAssessments.slice(0, 4).map((skill) => {
+                        const isStrong = skill.evidenceBand === 'Strong Evidence';
+                        const isModerate = skill.evidenceBand === 'Moderate Evidence';
+                        return (
+                          <div
+                            key={skill.skillName}
+                            onClick={() => {
+                              setActiveTab('skills');
+                              setExpandedSkill(skill.skillName);
+                            }}
+                            className={`p-4 rounded-xl border cursor-pointer hover:border-[#0B4F4A] transition-all flex flex-col justify-between gap-3 ${
+                              isStrong
+                                ? 'bg-[#EEF6F5]/60 border-[#C5DDD9]'
+                                : isModerate
+                                ? 'bg-white border-[#E2E8E7]'
+                                : 'bg-[#FBF7EE]/60 border-[#F3E3C3]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-mono font-medium text-[#526362]">
+                                {skill.category}
+                              </span>
+                              <span
+                                className={`text-[11px] font-semibold inline-flex items-center gap-1 ${getBandTextClass(
+                                  skill.evidenceBand
+                                )}`}
+                              >
+                                {isStrong ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                ) : (
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                )}
+                                <span>{skill.evidenceBand}</span>
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="text-base font-bold text-[#111919]">
+                                  {skill.skillName}
+                                </h4>
+                                <p className="text-xs text-[#526362] line-clamp-1 mt-0.5">
+                                  {skill.positiveSignals[0] || 'Observed in repository source files.'}
+                                </p>
+                              </div>
+                              <MatchScoreRing
+                                score={skill.evidenceScore}
+                                size={54}
+                                strokeWidth={4}
+                                customColor={isStrong ? '#0B4F4A' : isModerate ? '#188078' : '#D97706'}
+                              />
+                            </div>
+
+                            <div className="pt-2 border-t border-[#E2E8E7]/60 flex items-center justify-between text-[11px] text-[#526362]">
+                              <span>{skill.supportingRepos[0]?.matchingFilesCount || 0} code files</span>
+                              <span className="font-mono">{skill.supportingCommits.length} commits</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right Column: 5-Signal Radar Chart */}
+                  <div className="lg:col-span-5 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-5 flex flex-col items-center justify-center text-center space-y-3">
+                    <div className="w-full flex items-center justify-between text-xs">
+                      <span className="font-bold text-[#111919] uppercase tracking-wider">
+                        5-Signal Verification Shape
+                      </span>
+                      <span className="font-mono text-[#0B4F4A] font-semibold">
+                        {singleRepoReport.skillAssessments[0]?.skillName || 'Primary'}
+                      </span>
+                    </div>
+
+                    {singleRepoReport.skillAssessments[0] ? (
+                      <EvidenceRadarChart
+                        signals={singleRepoReport.skillAssessments[0].breakdown}
+                        size={220}
+                        skillName={singleRepoReport.skillAssessments[0].skillName}
+                      />
+                    ) : (
+                      <div className="py-8 text-xs text-[#526362]">
+                        No supported skills detected to plot radar chart.
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-[#526362] leading-relaxed pt-2 border-t border-[#E2E8E7] w-full text-left">
+                      Plots manifest presence (15), non-vendor source code files (25), substantive commit authorship (30), multi-repo consistency (15), and activity span (15).
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ownership Callout */}
                 <div className="p-4 bg-[#EEF6F5] border border-[#CBE0DD] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="text-xs font-semibold text-[#0B4F4A]">
-                      Ownership vs. Commit Attribution
+                      Ownership vs. Commit Attribution Verdict
                     </div>
                     <p className="text-xs text-[#263333]">
                       {singleRepoReport.ownershipVsAttribution.ownershipNote}
@@ -775,20 +889,11 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => setActiveTab('skills')}
+                    onClick={() => setActiveTab('contributions')}
                     className="text-xs font-semibold text-[#0B4F4A] hover:underline shrink-0"
                   >
-                    Expand all {singleRepoReport.skillAssessments.length} skills →
+                    View commit stream ({singleRepoReport.repository.commits.length}) →
                   </button>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold text-[#111919] mb-2">
-                    Top Observed Skills (Click any skill to inspect formula &amp; commits)
-                  </h3>
-                  {renderProgressiveSkillList(
-                    singleRepoReport.skillAssessments.slice(0, 5)
-                  )}
                 </div>
               </div>
             )}
@@ -1026,39 +1131,136 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
               </div>
             </div>
 
-            {/* Clean Key Evidence Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 pt-4 border-t border-[#E2E8E7] text-xs">
-              <div>
-                <div className="text-[#526362]">Original Repositories</div>
-                <div className="text-lg font-bold font-mono tabular-nums text-[#111919] mt-0.5">
-                  {profileReport.normalizedRepositories.filter((r) => !r.isFork).length}
+            {/* Visual Primary Profile Portfolio Summary */}
+            <div className="space-y-5 pt-4 border-t border-[#E2E8E7]">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                {/* Visual Ratio: Original vs Forked Repositories */}
+                <div className="lg:col-span-5 p-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl flex flex-col justify-between gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#111919] uppercase tracking-wider">
+                      Repository Originality
+                    </span>
+                    <span className="text-xs font-mono font-bold text-[#0B4F4A]">
+                      {profileReport.normalizedRepositories.filter((r) => !r.isFork).length} Original ·{' '}
+                      {profileReport.normalizedRepositories.filter((r) => r.isFork).length} Forks
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-[#E2E8E7] rounded-full overflow-hidden flex">
+                    <div
+                      title="Original Repositories"
+                      style={{
+                        width: `${
+                          profileReport.normalizedRepositories.length > 0
+                            ? (profileReport.normalizedRepositories.filter((r) => !r.isFork).length /
+                                profileReport.normalizedRepositories.length) *
+                              100
+                            : 100
+                        }%`,
+                      }}
+                      className="bg-[#0B4F4A] h-full transition-all"
+                    />
+                    <div
+                      title="Forked Repositories (Isolated)"
+                      style={{
+                        width: `${
+                          profileReport.normalizedRepositories.length > 0
+                            ? (profileReport.normalizedRepositories.filter((r) => r.isFork).length /
+                                profileReport.normalizedRepositories.length) *
+                              100
+                            : 0
+                        }%`,
+                      }}
+                      className="bg-[#D97706] h-full transition-all"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[#526362]">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#0B4F4A]" />
+                      <span>Original Work ({profileReport.normalizedRepositories.filter((r) => !r.isFork).length})</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#D97706]" />
+                      <span>Isolated Forks ({profileReport.normalizedRepositories.filter((r) => r.isFork).length})</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Verified Technologies Metric Ring */}
+                <div className="lg:col-span-3 p-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl flex items-center justify-around gap-3">
+                  <MatchScoreRing
+                    score={
+                      profileReport.skillAssessments.length > 0
+                        ? Math.round(
+                            (profileReport.skillAssessments.filter(
+                              (s) =>
+                                s.evidenceBand === 'Strong Evidence' ||
+                                s.evidenceBand === 'Moderate Evidence'
+                            ).length /
+                              profileReport.skillAssessments.length) *
+                              100
+                          )
+                        : 0
+                    }
+                    size={76}
+                    label="Verified"
+                    customColor="#0B4F4A"
+                  />
+                  <div className="space-y-1 text-xs">
+                    <div className="font-bold text-[#111919]">Verified Skills</div>
+                    <div className="text-sm font-mono font-bold text-[#0B4F4A]">
+                      {
+                        profileReport.skillAssessments.filter(
+                          (s) =>
+                            s.evidenceBand === 'Strong Evidence' ||
+                            s.evidenceBand === 'Moderate Evidence'
+                        ).length
+                      }{' '}
+                      / {profileReport.skillAssessments.length}
+                    </div>
+                    <div className="text-[10px] text-[#526362]">Strong or Moderate</div>
+                  </div>
+                </div>
+
+                {/* Best Fit Role Card */}
+                <div className="lg:col-span-4 p-4 bg-[#EEF6F5] border border-[#CBE0DD] rounded-xl flex flex-col justify-between gap-2">
+                  <div className="text-xs text-[#0B4F4A] font-semibold uppercase tracking-wider">
+                    Best-Fit Engineering Role
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[#111919]">
+                      {profileReport.roleRecommendations[0]?.roleTitle || 'Full-Stack Developer'}
+                    </h3>
+                    <p className="text-xs text-[#526362] line-clamp-1 mt-0.5">
+                      {profileReport.roleRecommendations[0]?.whyRecommended || 'Multi-technology portfolio.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-[#CBE0DD]/60">
+                    <span className="text-[#0B4F4A] font-semibold">
+                      {profileReport.roleRecommendations[0]?.alignmentScore || 80}% Fit
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('job-match')}
+                      className="text-xs text-[#0B4F4A] hover:underline font-semibold"
+                    >
+                      Compare roles →
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-[#526362]">Forks Isolated</div>
-                <div className="text-lg font-bold font-mono tabular-nums text-[#B45309] mt-0.5">
-                  {profileReport.normalizedRepositories.filter((r) => r.isFork).length}
+
+              {/* Tech Stack Distribution */}
+              {profileReport.skillAssessments.length > 0 && (
+                <div className="p-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl">
+                  <TechStackDistributionBar
+                    items={profileReport.skillAssessments.slice(0, 7).map((s) => ({
+                      name: s.skillName,
+                      count: s.evidenceScore,
+                    }))}
+                    title="Profile Technology Portfolio"
+                  />
                 </div>
-              </div>
-              <div>
-                <div className="text-[#526362]">Verified Technologies</div>
-                <div className="text-lg font-bold font-mono tabular-nums text-[#0B4F4A] mt-0.5">
-                  {
-                    profileReport.skillAssessments.filter(
-                      (s) =>
-                        s.evidenceBand === 'Strong Evidence' ||
-                        s.evidenceBand === 'Moderate Evidence'
-                    ).length
-                  }{' '}
-                  / {profileReport.skillAssessments.length}
-                </div>
-              </div>
-              <div>
-                <div className="text-[#526362]">Best-Fit Role</div>
-                <div className="text-sm font-semibold text-[#111919] mt-1 truncate">
-                  {profileReport.roleRecommendations[0]?.roleTitle || 'Insufficient Data'}
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -1066,7 +1268,7 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
           <div className="border-b border-[#E2E8E7] bg-[#F8F9F8] px-6 flex items-center gap-6 overflow-x-auto">
             {(
               [
-                ['overview', 'Overview'],
+                ['overview', 'Overview & Visual Dashboard'],
                 ['skills', `Skills & Evidence (${profileReport.skillAssessments.length})`],
                 [
                   'repositories',
@@ -1096,10 +1298,15 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-[#111919]">
-                      Key Skill Evidence (Click any skill to expand supporting details)
-                    </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-base font-bold text-[#111919]">
+                        Key Skill Evidence Portfolio
+                      </h3>
+                      <p className="text-xs text-[#526362]">
+                        Evaluated across {profileReport.normalizedRepositories.filter((r) => !r.isFork).length} original repositories
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setActiveTab('skills')}
@@ -1108,7 +1315,70 @@ export const PublicAnalyzerView: React.FC<PublicAnalyzerViewProps> = ({
                       View all {profileReport.skillAssessments.length} skills →
                     </button>
                   </div>
-                  {renderProgressiveSkillList(profileReport.skillAssessments.slice(0, 6))}
+
+                  {/* Visual Skill Cards Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {profileReport.skillAssessments.slice(0, 6).map((skill) => {
+                      const isStrong = skill.evidenceBand === 'Strong Evidence';
+                      const isModerate = skill.evidenceBand === 'Moderate Evidence';
+                      return (
+                        <div
+                          key={skill.skillName}
+                          onClick={() => {
+                            setActiveTab('skills');
+                            setExpandedSkill(skill.skillName);
+                          }}
+                          className={`p-4 rounded-xl border cursor-pointer hover:border-[#0B4F4A] transition-all flex flex-col justify-between gap-3 ${
+                            isStrong
+                              ? 'bg-[#EEF6F5]/50 border-[#C5DDD9]'
+                              : isModerate
+                              ? 'bg-white border-[#E2E8E7]'
+                              : 'bg-[#FBF7EE]/60 border-[#F3E3C3]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-mono font-medium text-[#526362]">
+                              {skill.category}
+                            </span>
+                            <span
+                              className={`text-[11px] font-semibold inline-flex items-center gap-1 ${getBandTextClass(
+                                skill.evidenceBand
+                              )}`}
+                            >
+                              {isStrong ? (
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              ) : (
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                              )}
+                              <span>{skill.evidenceBand}</span>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <h4 className="text-base font-bold text-[#111919]">
+                                {skill.skillName}
+                              </h4>
+                              <p className="text-xs text-[#526362] line-clamp-1 mt-0.5">
+                                {skill.positiveSignals[0] || 'Observed in public repository files.'}
+                              </p>
+                            </div>
+                            <MatchScoreRing
+                              score={skill.evidenceScore}
+                              size={52}
+                              strokeWidth={4}
+                              customColor={isStrong ? '#0B4F4A' : isModerate ? '#188078' : '#D97706'}
+                            />
+                          </div>
+
+                          <div className="pt-2 border-t border-[#E2E8E7]/60 flex items-center justify-between text-[11px] text-[#526362]">
+                            <span>{skill.supportingRepos.length} supporting repos</span>
+                            <span className="font-mono">{skill.supportingCommits.length} commits</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}

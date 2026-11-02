@@ -15,6 +15,14 @@ import {
   SlidersHorizontal,
   BookmarkCheck,
   ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Copy,
+  Sparkles,
+  BarChart3,
+  Layers,
+  LayoutDashboard,
+  HelpCircle,
 } from 'lucide-react';
 import {
   UserProfileData,
@@ -31,6 +39,10 @@ import { apiFetch } from '../lib/apiClient';
 import {
   MatchScoreRing,
   EvidenceMeterBar,
+  RequirementCoverageDonut,
+  TechStackDistributionBar,
+  AuthorshipAttributionGauge,
+  EngineeringRigorGrid,
 } from './VisualAssets';
 
 interface CandidateOverviewData {
@@ -119,6 +131,18 @@ export const RecruiterAssessmentView: React.FC<RecruiterAssessmentViewProps> = (
   const [showJdEditor, setShowJdEditor] = useState(true);
   const [expandedRequirement, setExpandedRequirement] = useState<string | null>(null);
   const [showInterviewPrompts, setShowInterviewPrompts] = useState(false);
+  const [reportViewTab, setReportViewTab] = useState<
+    'visual-dashboard' | 'requirements' | 'interview' | 'tech-tree'
+  >('visual-dashboard');
+  const [copiedQuestionId, setCopiedQuestionId] = useState<string | null>(null);
+
+  const handleCopyQuestion = (text: string, id: string) => {
+    if (navigator?.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text);
+      setCopiedQuestionId(id);
+      setTimeout(() => setCopiedQuestionId(null), 2000);
+    }
+  };
 
   useEffect(() => {
     if (initialSavedAssessment) {
@@ -598,98 +622,170 @@ export const RecruiterAssessmentView: React.FC<RecruiterAssessmentViewProps> = (
             )}
           </section>
 
-          {/* Candidate Assessment Output — Prioritized & Clean */}
-          {matchReport && candidateOverview && (
-            <section className="bg-white border border-[#E2E8E7] rounded-xl p-6 space-y-8">
-              {/* 1. Candidate & Repository Identity + Dual Distinct Score Rings (Evidence Strength vs. JD Match) */}
-              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 pb-6 border-b border-[#E2E8E7]">
-                <div className="space-y-2.5 max-w-2xl">
-                  <div className="flex flex-wrap items-center gap-2.5 text-xs">
-                    <span className="font-mono font-semibold text-[#0B4F4A]">
-                      @{candidateOverview.username}
-                    </span>
-                    <span className="text-[#CBD5D4]">·</span>
-                    <span className="text-[#526362]">
-                      {candidateOverview.originalReposCount} Original Repos ·{' '}
-                      {candidateOverview.forkedReposCount} Forks Isolated ·{' '}
-                      {candidateOverview.totalAttributedCommits} Attributed Commits
-                    </span>
-                    <a
-                      href={candidateOverview.profileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[#0B4F4A] hover:underline inline-flex items-center gap-1"
-                    >
-                      <span>GitHub Profile</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+          {/* Candidate Assessment Output — Visual Primary Report */}
+          {matchReport && candidateOverview && (() => {
+            const strongReqs = matchReport.requirementEvaluations.filter(
+              (r) => r.evidenceState === 'Strong supporting evidence'
+            ).length;
+            const partialReqs = matchReport.requirementEvaluations.filter(
+              (r) => r.evidenceState === 'Partial supporting evidence'
+            ).length;
+            const missingReqs = matchReport.requirementEvaluations.filter(
+              (r) =>
+                r.evidenceState === 'No supporting evidence found' ||
+                r.evidenceState === 'Inconclusive due to insufficient data'
+            ).length;
+
+            const candidateTechItems = candidateOverview.skillAssessments
+              .filter((s) => s.evidenceScore > 5)
+              .sort((a, b) => b.evidenceScore - a.evidenceScore)
+              .slice(0, 8)
+              .map((s) => ({
+                name: s.skillName,
+                count: s.evidenceScore,
+              }));
+
+            const repos = candidateOverview.normalizedRepositories;
+            const hasTests = repos.some((r) =>
+              r.meaningfulFilePaths.some((f) => /test|spec|__tests__/i.test(f))
+            );
+            const testFilesCount = repos.reduce(
+              (acc, r) =>
+                acc + r.meaningfulFilePaths.filter((f) => /test|spec|__tests__/i.test(f)).length,
+              0
+            );
+            const hasCiCd = repos.some((r) =>
+              r.meaningfulFilePaths.some((f) => /\.github\/workflows|circleci|\.travis/i.test(f))
+            );
+            const hasContainer = repos.some((r) =>
+              r.meaningfulFilePaths.some((f) => /docker|compose/i.test(f))
+            );
+            const hasTypes = repos.some((r) =>
+              r.meaningfulFilePaths.some((f) => /tsconfig|\.tsx?$/i.test(f))
+            );
+
+            return (
+              <section className="bg-white border border-[#E2E8E7] rounded-xl p-6 sm:p-8 space-y-8 shadow-xs">
+                {/* 1. Header with Visual Verdict Banner & Identity */}
+                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 pb-6 border-b border-[#E2E8E7]">
+                  <div className="space-y-3 max-w-2xl">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {matchReport.matchScore >= 75 ? (
+                        <span className="px-3 py-1 text-xs font-bold text-white bg-[#0B4F4A] rounded-full inline-flex items-center gap-1.5 shadow-xs">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Strong Match · Interview Recommended</span>
+                        </span>
+                      ) : matchReport.matchScore >= 50 ? (
+                        <span className="px-3 py-1 text-xs font-bold text-[#92400E] bg-[#FBF7EE] border border-[#F3E3C3] rounded-full inline-flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Moderate Fit · Explore Highlighted Gaps</span>
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 text-xs font-bold text-[#526362] bg-[#F2F5F4] border border-[#CBD5D4] rounded-full inline-flex items-center gap-1.5">
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>Significant Evidence Gaps</span>
+                        </span>
+                      )}
+                      <span className="text-xs font-mono font-semibold text-[#0B4F4A]">
+                        @{candidateOverview.username}
+                      </span>
+                      <span className="text-[#CBD5D4]">·</span>
+                      <span className="text-xs text-[#526362]">
+                        {candidateOverview.originalReposCount} Repos · {candidateOverview.totalAttributedCommits} Commits
+                      </span>
+                    </div>
+
+                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#111919]">
+                      {candidateOverview.displayName || candidateOverview.username} — {matchReport.jobDescription.title}
+                    </h2>
+
+                    <p className="text-xs sm:text-sm text-[#526362] leading-relaxed">
+                      {matchReport.recruiterAssessment.recruiterSummary}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      {user && (
+                        <button
+                          type="button"
+                          disabled={isSavingReport}
+                          onClick={() => void handleSaveCurrentAssessment()}
+                          className="px-3.5 py-1.5 text-xs font-semibold text-[#0B4F4A] bg-[#EEF6F5] hover:bg-[#DDECE9] border border-[#CBE0DD] rounded-lg transition-colors inline-flex items-center gap-1.5"
+                        >
+                          <BookmarkCheck className="w-3.5 h-3.5" />
+                          <span>
+                            {isSavingReport ? 'Saving...' : 'Save Assessment to Pipeline'}
+                          </span>
+                        </button>
+                      )}
+                      <a
+                        href={candidateOverview.profileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 text-xs font-medium text-[#263333] border border-[#CBD5D4] hover:bg-[#F8F9F8] rounded-lg inline-flex items-center gap-1.5"
+                      >
+                        <span>GitHub Profile</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
 
-                  <h2 className="text-2xl font-bold text-[#111919]">
-                    {candidateOverview.displayName} — {matchReport.jobDescription.title}
-                  </h2>
-
-                  <p className="text-xs text-[#526362] leading-relaxed">
-                    {matchReport.recruiterAssessment.recruiterSummary}
-                  </p>
-
-                  {user && (
-                    <div className="pt-1 flex items-center gap-3">
-                      <button
-                        type="button"
-                        disabled={isSavingReport}
-                        onClick={() => void handleSaveCurrentAssessment()}
-                        className="px-3.5 py-1.5 text-xs font-semibold text-[#0B4F4A] bg-[#EEF6F5] hover:bg-[#DDECE9] border border-[#CBE0DD] rounded-lg transition-colors inline-flex items-center gap-1.5"
-                      >
-                        <BookmarkCheck className="w-3.5 h-3.5" />
-                        <span>
-                          {isSavingReport ? 'Saving...' : 'Save Assessment to Pipeline'}
-                        </span>
-                      </button>
+                  {/* Dual Hero Score Rings */}
+                  <div className="flex items-center gap-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-4 shrink-0">
+                    <div className="flex flex-col items-center">
+                      <MatchScoreRing
+                        score={matchReport.matchScore}
+                        size={84}
+                        label="JD Match"
+                        customColor={matchReport.matchScore >= 70 ? '#0B4F4A' : matchReport.matchScore >= 45 ? '#D97706' : '#526362'}
+                      />
+                      <span className="text-[11px] font-semibold text-[#111919] mt-1.5">
+                        Role Fit
+                      </span>
                     </div>
-                  )}
+
+                    <div className="h-14 w-px bg-[#E2E8E7]" />
+
+                    <div className="flex flex-col items-center">
+                      <MatchScoreRing
+                        score={evidenceStrengthScore}
+                        size={84}
+                        label="Evidence"
+                        customColor="#188078"
+                      />
+                      <span className="text-[11px] font-semibold text-[#111919] mt-1.5">
+                        Code Strength
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Dual Distinct Metrics: Technical Evidence Strength vs. Job-Description Match */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 shrink-0">
-                  {/* Metric A: Technical Evidence Strength (Independent of JD) */}
-                  <div className="bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-4 flex items-center gap-4">
-                    <MatchScoreRing
-                      score={evidenceStrengthScore}
-                      label="Evidence"
-                    />
-                    <div className="space-y-1 max-w-[150px] text-xs">
-                      <div className="font-semibold text-[#111919] inline-flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5 text-[#0B4F4A]" />
-                        <span>Evidence Strength</span>
-                      </div>
-                      <p className="text-[11px] text-[#526362] leading-relaxed">
-                        Overall code depth, commit authorship &amp; multi-signal verification across original repos.
-                      </p>
+                {/* 2. Visual Executive Scorecard Strip (3 Visual Widgets) */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  {/* Widget A: Score Formula Breakdown */}
+                  <div className="lg:col-span-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-5 flex flex-col justify-between gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#111919] uppercase tracking-wider">
+                        Score Breakdown (100 pts)
+                      </span>
+                      <span className="text-xs font-mono font-bold text-[#0B4F4A]">
+                        {matchReport.matchScore} / 100
+                      </span>
                     </div>
-                  </div>
-
-                  {/* Metric B: Job-Description Match Score (Specific to Target Role) */}
-                  <div className="bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-4 flex items-center gap-5">
-                    <MatchScoreRing
-                      score={matchReport.matchScore}
-                      label="JD Match"
-                    />
-                    <div className="space-y-2 w-40 text-xs">
+                    <div className="space-y-3">
                       <EvidenceMeterBar
-                        label="Required (60)"
+                        label="Required Skills (60 max)"
                         score={matchReport.scoreBreakdown.requiredSkillsPoints}
                         max={matchReport.scoreBreakdown.requiredSkillsMax}
                         tone="teal"
                       />
                       <EvidenceMeterBar
-                        label="Preferred (15)"
+                        label="Preferred Skills (15 max)"
                         score={matchReport.scoreBreakdown.preferredSkillsPoints}
                         max={matchReport.scoreBreakdown.preferredSkillsMax}
                         tone="muted"
                       />
                       <EvidenceMeterBar
-                        label="Depth (25)"
+                        label="Code Depth & Attributed Work (25 max)"
                         score={
                           matchReport.scoreBreakdown.projectRelevancePoints +
                           matchReport.scoreBreakdown.attributionReliabilityPoints
@@ -698,212 +794,586 @@ export const RecruiterAssessmentView: React.FC<RecruiterAssessmentViewProps> = (
                         tone="amber"
                       />
                     </div>
+                    <div className="text-[11px] text-[#526362] pt-2 border-t border-[#E2E8E7]">
+                      {matchReport.scoreBreakdown.formulaSummary}
+                    </div>
+                  </div>
+
+                  {/* Widget B: Requirements Coverage Donut */}
+                  <div className="lg:col-span-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-5 flex flex-col justify-between gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#111919] uppercase tracking-wider">
+                        Requirement Fulfillment
+                      </span>
+                      <span className="text-xs font-mono font-bold text-[#111919]">
+                        {matchReport.requirementEvaluations.length} total
+                      </span>
+                    </div>
+                    <div className="py-1 flex justify-center">
+                      <RequirementCoverageDonut
+                        strongCount={strongReqs}
+                        partialCount={partialReqs}
+                        missingCount={missingReqs}
+                        size={110}
+                        title="Met"
+                      />
+                    </div>
+                    <div className="text-[11px] text-[#526362] text-center pt-2 border-t border-[#E2E8E7]">
+                      {strongReqs} of {matchReport.requirementEvaluations.length} requirements supported with strong multi-signal code evidence
+                    </div>
+                  </div>
+
+                  {/* Widget C: Code Rigor & Authorship Integrity */}
+                  <div className="lg:col-span-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-5 flex flex-col justify-between gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#111919] uppercase tracking-wider">
+                        Code Integrity & Rigor
+                      </span>
+                      <span className="text-[11px] font-mono text-[#0B4F4A] font-semibold">
+                        @{candidateOverview.username}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-2.5 bg-white border border-[#E2E8E7] rounded-lg">
+                        <div className="text-[#526362] text-[11px]">Automated Tests</div>
+                        <div className="font-semibold text-[#111919] mt-0.5 flex items-center gap-1.5">
+                          {hasTests ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#0B4F4A]" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5 text-[#526362]" />
+                          )}
+                          <span>{hasTests ? `${testFilesCount} Test Files` : 'No Tests Found'}</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white border border-[#E2E8E7] rounded-lg">
+                        <div className="text-[#526362] text-[11px]">CI/CD Pipeline</div>
+                        <div className="font-semibold text-[#111919] mt-0.5 flex items-center gap-1.5">
+                          {hasCiCd ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#0B4F4A]" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5 text-[#526362]" />
+                          )}
+                          <span>{hasCiCd ? 'Automated CI' : 'No CI Config'}</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white border border-[#E2E8E7] rounded-lg">
+                        <div className="text-[#526362] text-[11px]">Type Strictness</div>
+                        <div className="font-semibold text-[#111919] mt-0.5 flex items-center gap-1.5">
+                          {hasTypes ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#0B4F4A]" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5 text-[#526362]" />
+                          )}
+                          <span>{hasTypes ? 'Strict Types' : 'Dynamic / Untyped'}</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white border border-[#E2E8E7] rounded-lg">
+                        <div className="text-[#526362] text-[11px]">Container Config</div>
+                        <div className="font-semibold text-[#111919] mt-0.5 flex items-center gap-1.5">
+                          {hasContainer ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#0B4F4A]" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5 text-[#526362]" />
+                          )}
+                          <span>{hasContainer ? 'Docker / Compose' : 'No Containers'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-[#526362] pt-2 border-t border-[#E2E8E7]">
+                      {candidateOverview.originalReposCount} original repos analyzed · {candidateOverview.forkedReposCount} forks isolated
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 2. Key Strengths & Missing Evidence */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-6 border-b border-[#E2E8E7] text-xs">
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-[#0B4F4A]">
-                    Verified Technical Strengths
-                  </h3>
-                  {matchReport.recruiterAssessment.strengths.length === 0 ? (
-                    <p className="text-[#526362]">
-                      No strong multi-signal matches were found for the required technologies.
-                    </p>
-                  ) : (
-                    <ul className="space-y-2 text-[#263333]">
-                      {matchReport.recruiterAssessment.strengths.map((str, idx) => (
-                        <li key={idx} className="flex items-start gap-2.5 leading-relaxed">
-                          <Check className="w-4 h-4 text-[#0B4F4A] shrink-0 mt-0.5" />
-                          <span>{str}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-[#B45309]">
-                    Missing Public Evidence &amp; Verification Limitations
-                  </h3>
-                  {matchReport.recruiterAssessment.gapsAndConcerns.length === 0 ? (
-                    <p className="text-[#0B4F4A]">
-                      All stated required technologies have supporting public code evidence.
-                    </p>
-                  ) : (
-                    <ul className="space-y-2 text-[#263333]">
-                      {matchReport.recruiterAssessment.gapsAndConcerns.map((gap, idx) => (
-                        <li key={idx} className="flex items-start gap-2.5 leading-relaxed">
-                          <AlertTriangle className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
-                          <span>{gap}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              {/* 3. Job Requirement Alignment & Direct Source Links */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-[#111919]">
-                    Job Requirement Alignment &amp; Source Evidence
-                  </h3>
-                  <span className="text-xs text-[#526362]">
-                    Click any requirement to inspect supporting repositories &amp; commits
-                  </span>
-                </div>
-
-                <div className="divide-y divide-[#E2E8E7]">
-                  {matchReport.requirementEvaluations.map((req) => {
-                    const rowKey = `${req.requirementType}_${req.skillName}`;
-                    const isExpanded = expandedRequirement === rowKey;
+                {/* 3. Visual Report Navigation Tabs */}
+                <div className="border-b border-[#E2E8E7] bg-[#F8F9F8] px-4 rounded-xl flex items-center gap-3 overflow-x-auto">
+                  {[
+                    { id: 'visual-dashboard', label: 'Visual Scorecard & Matrix', icon: LayoutDashboard },
+                    { id: 'requirements', label: `Requirement Audit (${matchReport.requirementEvaluations.length})`, icon: BarChart3 },
+                    { id: 'interview', label: `Interview Guide (${matchReport.recruiterAssessment.interviewQuestions.length})`, icon: HelpCircle },
+                    { id: 'tech-tree', label: 'Architecture & Rigor', icon: Layers },
+                  ].map((tab) => {
+                    const IconComp = tab.icon;
+                    const isActive = reportViewTab === tab.id;
                     return (
-                      <div key={rowKey} className="py-3.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedRequirement(isExpanded ? null : rowKey)
-                          }
-                          className="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
-                        >
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span className="text-sm font-semibold text-[#111919] group-hover:text-[#0B4F4A]">
-                              {req.skillName}
-                            </span>
-                            <span className="text-xs font-mono text-[#526362]">
-                              {req.requirementType}
-                            </span>
-                            <span
-                              className={`text-xs ${
-                                req.evidenceState === 'Strong supporting evidence'
-                                  ? 'text-[#0B4F4A] font-semibold'
-                                  : req.evidenceState === 'Partial supporting evidence'
-                                  ? 'text-[#B45309] font-medium'
-                                  : 'text-[#526362]'
-                              }`}
-                            >
-                              {req.evidenceState}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-4 shrink-0 sm:w-56">
-                            <div className="flex-1">
-                              <EvidenceMeterBar
-                                score={req.skillEvidenceScore}
-                                max={100}
-                                tone={getEvidenceStateTone(req.evidenceState)}
-                                showValue={false}
-                              />
-                            </div>
-                            <span className="text-xs font-mono font-semibold tabular-nums text-[#111919] w-12 text-right">
-                              {req.skillEvidenceScore}/100
-                            </span>
-                            {isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-[#526362]" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-[#526362]" />
-                            )}
-                          </div>
-                        </button>
-
-                        {isExpanded && (
-                          <div className="mt-3 pt-3 border-t border-[#E2E8E7] text-xs space-y-2.5 bg-[#F8F9F8] p-4 rounded-xl">
-                            <p className="text-[#263333] leading-relaxed">
-                              {req.explanation}
-                            </p>
-
-                            {(req.supportingRepos.length > 0 ||
-                              req.supportingCommits.length > 0) && (
-                              <div className="flex flex-wrap items-center gap-4 pt-1">
-                                {req.supportingRepos.map((sr) => (
-                                  <a
-                                    key={sr.repoName}
-                                    href={sr.htmlUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="font-mono text-[#0B4F4A] hover:underline inline-flex items-center gap-1"
-                                  >
-                                    <FolderGit2 className="w-3.5 h-3.5" />
-                                    <span>
-                                      {sr.repoName}{' '}
-                                      <span className="opacity-80">
-                                        ({sr.matchingFilesCount > 0
-                                          ? `${sr.matchingFilesCount} code ${sr.matchingFilesCount === 1 ? 'file' : 'files'}`
-                                          : '0 code files'}
-                                        , {sr.attributedCommitsCount} {sr.attributedCommitsCount === 1 ? 'commit' : 'commits'})
-                                      </span>
-                                    </span>
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                ))}
-                                {req.supportingCommits.slice(0, 3).map((sc) => (
-                                  <a
-                                    key={sc.shortSha}
-                                    href={sc.htmlUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="font-mono text-[#263333] hover:text-[#0B4F4A] hover:underline inline-flex items-center gap-1"
-                                  >
-                                    <GitCommit className="w-3.5 h-3.5 text-[#188078]" />
-                                    <span>
-                                      {sc.shortSha}: {sc.message.slice(0, 48)}
-                                    </span>
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setReportViewTab(tab.id as any)}
+                        className={`py-3 px-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap inline-flex items-center gap-2 ${
+                          isActive
+                            ? 'border-[#0B4F4A] text-[#0B4F4A]'
+                            : 'border-transparent text-[#526362] hover:text-[#111919]'
+                        }`}
+                      >
+                        <IconComp className="w-3.5 h-3.5" />
+                        <span>{tab.label}</span>
+                      </button>
                     );
                   })}
                 </div>
-              </div>
 
-              {/* 4. Collapsible Commit-Grounded Interview Prompts */}
-              <div className="pt-4 border-t border-[#E2E8E7]">
-                <button
-                  type="button"
-                  onClick={() => setShowInterviewPrompts(!showInterviewPrompts)}
-                  className="text-xs font-semibold text-[#0B4F4A] hover:underline inline-flex items-center gap-1.5"
-                >
-                  <span>
-                    {showInterviewPrompts
-                      ? 'Hide Commit-Grounded Interview Questions'
-                      : `Show ${matchReport.recruiterAssessment.interviewQuestions.length} Evidence-Grounded Interview Questions`}
-                  </span>
-                  {showInterviewPrompts ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </button>
-
-                {showInterviewPrompts && (
-                  <div className="mt-4 divide-y divide-[#E2E8E7] text-xs">
-                    {matchReport.recruiterAssessment.interviewQuestions.map((q) => (
-                      <div key={q.id} className="py-3.5 space-y-1">
-                        <div className="flex items-center gap-2 font-mono text-[11px] text-[#0B4F4A]">
-                          <span>{q.topic}</span>
-                          <span>·</span>
-                          <span className="text-[#526362]">{q.targetRepoOrSkill}</span>
+                {/* 4. Tab 1: Visual Scorecard & Matrix (Visual Primary) */}
+                {reportViewTab === 'visual-dashboard' && (
+                  <div className="space-y-8">
+                    {/* Visual Requirement Fulfillment Matrix Grid */}
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <h3 className="text-base font-bold text-[#111919]">
+                            Job Requirement Evidence Matrix
+                          </h3>
+                          <p className="text-xs text-[#526362]">
+                            Deterministic comparison of candidate code evidence against each job requirement
+                          </p>
                         </div>
-                        <p className="font-semibold text-[#111919] text-sm">
-                          “{q.question}”
-                        </p>
-                        <p className="text-[#526362]">
-                          Context: {q.motivatingEvidence}
-                        </p>
+                        <span className="text-xs font-mono text-[#0B4F4A] bg-[#EEF6F5] px-2.5 py-1 rounded-md font-semibold">
+                          {strongReqs} Strong · {partialReqs} Partial · {missingReqs} Gaps
+                        </span>
                       </div>
-                    ))}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {matchReport.requirementEvaluations.map((req) => {
+                          const isStrong = req.evidenceState === 'Strong supporting evidence';
+                          const isPartial = req.evidenceState === 'Partial supporting evidence';
+                          return (
+                            <div
+                              key={`${req.requirementType}_${req.skillName}`}
+                              className={`p-4 rounded-xl border flex flex-col justify-between gap-3 transition-all ${
+                                isStrong
+                                  ? 'bg-[#EEF6F5]/50 border-[#C5DDD9]'
+                                  : isPartial
+                                  ? 'bg-[#FBF7EE]/60 border-[#F3E3C3]'
+                                  : 'bg-[#F8F9F8] border-[#E2E8E7]'
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span
+                                    className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded ${
+                                      req.requirementType === 'Required'
+                                        ? 'bg-[#0B4F4A] text-white'
+                                        : 'bg-[#E2E8E7] text-[#263333]'
+                                    }`}
+                                  >
+                                    {req.requirementType}
+                                  </span>
+                                  <span
+                                    className={`text-xs font-semibold inline-flex items-center gap-1 ${
+                                      isStrong
+                                        ? 'text-[#0B4F4A]'
+                                        : isPartial
+                                        ? 'text-[#D97706]'
+                                        : 'text-[#526362]'
+                                    }`}
+                                  >
+                                    {isStrong ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                    ) : isPartial ? (
+                                      <AlertTriangle className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <XCircle className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>
+                                      {isStrong ? 'Strong' : isPartial ? 'Partial' : 'Missing'}
+                                    </span>
+                                  </span>
+                                </div>
+
+                                <div>
+                                  <h4 className="text-base font-bold text-[#111919]">
+                                    {req.skillName}
+                                  </h4>
+                                  <p className="text-xs text-[#526362] line-clamp-2 mt-1 leading-relaxed">
+                                    {req.explanation}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 pt-2 border-t border-[#E2E8E7]/70">
+                                <EvidenceMeterBar
+                                  label="Evidence Score"
+                                  score={req.skillEvidenceScore}
+                                  max={100}
+                                  tone={isStrong ? 'teal' : isPartial ? 'amber' : 'neutral'}
+                                  showValue={true}
+                                />
+                                <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-[#526362]">
+                                  {req.supportingRepos.slice(0, 2).map((sr) => (
+                                    <span
+                                      key={sr.repoName}
+                                      className="px-2 py-0.5 bg-white border border-[#CBD5D4] rounded text-[#0B4F4A] inline-flex items-center gap-1"
+                                    >
+                                      <FolderGit2 className="w-3 h-3" />
+                                      <span>{sr.repoName} ({sr.attributedCommitsCount}c)</span>
+                                    </span>
+                                  ))}
+                                  {req.supportingRepos.length === 0 && (
+                                    <span className="text-[#839594]">No public repos</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Tech Stack Distribution Bar */}
+                    {candidateTechItems.length > 0 && (
+                      <div className="p-5 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl space-y-3">
+                        <TechStackDistributionBar
+                          items={candidateTechItems}
+                          title="Candidate Technology Distribution (Evaluated Repositories)"
+                        />
+                      </div>
+                    )}
+
+                    {/* Visual Strengths vs Gaps Comparison Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Strengths Card */}
+                      <div className="p-5 bg-[#EEF6F5]/60 border border-[#C5DDD9] rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-[#0B4F4A] flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-[#0B4F4A]" />
+                            <span>Verified Technical Strengths</span>
+                          </h4>
+                          <span className="text-[11px] font-mono font-semibold text-[#0B4F4A] bg-white px-2 py-0.5 rounded border border-[#C5DDD9]">
+                            {matchReport.recruiterAssessment.strengths.length} verified
+                          </span>
+                        </div>
+                        {matchReport.recruiterAssessment.strengths.length === 0 ? (
+                          <p className="text-xs text-[#526362]">
+                            No strong multi-signal matches were identified.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {matchReport.recruiterAssessment.strengths.map((str, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 bg-white border border-[#D3E5E2] rounded-lg text-xs text-[#263333] flex items-start gap-2.5 leading-relaxed"
+                              >
+                                <span className="w-5 h-5 rounded-full bg-[#EEF6F5] text-[#0B4F4A] font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                                  ✓
+                                </span>
+                                <div>{str}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Gaps & Limitations Card */}
+                      <div className="p-5 bg-[#FBF7EE]/60 border border-[#F3E3C3] rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-[#B45309] flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-[#D97706]" />
+                            <span>Evidence Gaps &amp; Verification Limitations</span>
+                          </h4>
+                          <span className="text-[11px] font-mono font-semibold text-[#B45309] bg-white px-2 py-0.5 rounded border border-[#F3E3C3]">
+                            {matchReport.recruiterAssessment.gapsAndConcerns.length} flagged
+                          </span>
+                        </div>
+                        {matchReport.recruiterAssessment.gapsAndConcerns.length === 0 ? (
+                          <div className="p-3 bg-white border border-[#E2E8E7] rounded-lg text-xs text-[#0B4F4A]">
+                            All required technical qualifications have supporting public repository evidence.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {matchReport.recruiterAssessment.gapsAndConcerns.map((gap, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 bg-white border border-[#F3E3C3] rounded-lg text-xs text-[#263333] flex items-start gap-2.5 leading-relaxed"
+                              >
+                                <span className="w-5 h-5 rounded-full bg-[#FEF3C7] text-[#D97706] font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                                  !
+                                </span>
+                                <div>{gap}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
-              </div>
-            </section>
-          )}
+
+                {/* 5. Tab 2: Detailed Requirement Audit */}
+                {reportViewTab === 'requirements' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-[#111919]">
+                        Detailed Source Breakdown &amp; Attribution Files
+                      </h3>
+                      <span className="text-xs text-[#526362]">
+                        Click any requirement to expand supporting commits and source trees
+                      </span>
+                    </div>
+
+                    <div className="divide-y divide-[#E2E8E7]">
+                      {matchReport.requirementEvaluations.map((req) => {
+                        const rowKey = `${req.requirementType}_${req.skillName}`;
+                        const isExpanded = expandedRequirement === rowKey;
+                        return (
+                          <div key={rowKey} className="py-3.5">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedRequirement(isExpanded ? null : rowKey)}
+                              className="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                            >
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-sm font-semibold text-[#111919] group-hover:text-[#0B4F4A]">
+                                  {req.skillName}
+                                </span>
+                                <span className="text-xs font-mono text-[#526362]">
+                                  {req.requirementType}
+                                </span>
+                                <span
+                                  className={`text-xs ${
+                                    req.evidenceState === 'Strong supporting evidence'
+                                      ? 'text-[#0B4F4A] font-semibold'
+                                      : req.evidenceState === 'Partial supporting evidence'
+                                      ? 'text-[#B45309] font-medium'
+                                      : 'text-[#526362]'
+                                  }`}
+                                >
+                                  {req.evidenceState}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-4 shrink-0 sm:w-56">
+                                <div className="flex-1">
+                                  <EvidenceMeterBar
+                                    score={req.skillEvidenceScore}
+                                    max={100}
+                                    tone={getEvidenceStateTone(req.evidenceState)}
+                                    showValue={false}
+                                  />
+                                </div>
+                                <span className="text-xs font-mono font-semibold tabular-nums text-[#111919] w-12 text-right">
+                                  {req.skillEvidenceScore}/100
+                                </span>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-4 h-4 text-[#526362]" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-[#526362]" />
+                                )}
+                              </div>
+                            </button>
+
+                            {isExpanded && (
+                              <div className="mt-3 pt-3 border-t border-[#E2E8E7] text-xs space-y-2.5 bg-[#F8F9F8] p-4 rounded-xl">
+                                <p className="text-[#263333] leading-relaxed">
+                                  {req.explanation}
+                                </p>
+
+                                {(req.supportingRepos.length > 0 ||
+                                  req.supportingCommits.length > 0) && (
+                                  <div className="flex flex-wrap items-center gap-4 pt-1">
+                                    {req.supportingRepos.map((sr) => (
+                                      <a
+                                        key={sr.repoName}
+                                        href={sr.htmlUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="font-mono text-[#0B4F4A] hover:underline inline-flex items-center gap-1"
+                                      >
+                                        <FolderGit2 className="w-3.5 h-3.5" />
+                                        <span>
+                                          {sr.repoName}{' '}
+                                          <span className="opacity-80">
+                                            ({sr.matchingFilesCount > 0
+                                              ? `${sr.matchingFilesCount} code ${sr.matchingFilesCount === 1 ? 'file' : 'files'}`
+                                              : '0 code files'}
+                                            , {sr.attributedCommitsCount} {sr.attributedCommitsCount === 1 ? 'commit' : 'commits'})
+                                          </span>
+                                        </span>
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    ))}
+                                    {req.supportingCommits.slice(0, 3).map((sc) => (
+                                      <a
+                                        key={sc.shortSha}
+                                        href={sc.htmlUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="font-mono text-[#263333] hover:text-[#0B4F4A] hover:underline inline-flex items-center gap-1"
+                                      >
+                                        <GitCommit className="w-3.5 h-3.5 text-[#188078]" />
+                                        <span>
+                                          {sc.shortSha}: {sc.message.slice(0, 48)}
+                                        </span>
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. Tab 3: Commit-Grounded Interview Guide (Visual Prompt Cards) */}
+                {reportViewTab === 'interview' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-[#111919]">
+                          Commit-Grounded Technical Interview Guide
+                        </h3>
+                        <p className="text-xs text-[#526362]">
+                          Interview questions dynamically grounded in the candidate's actual commits, architectural decisions, and observed code gaps.
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono font-semibold text-[#0B4F4A] bg-[#EEF6F5] px-2.5 py-1 rounded-md">
+                        {matchReport.recruiterAssessment.interviewQuestions.length} questions
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      {matchReport.recruiterAssessment.interviewQuestions.map((q, idx) => {
+                        const isCopied = copiedQuestionId === q.id;
+                        return (
+                          <div
+                            key={q.id}
+                            className="p-5 bg-[#F8F9F8] border border-[#E2E8E7] hover:border-[#CBD5D4] rounded-xl space-y-3 transition-all"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-[#0B4F4A] bg-[#EEF6F5] border border-[#C5DDD9] px-2 py-0.5 rounded">
+                                  Q{idx + 1}
+                                </span>
+                                <span className="text-xs font-semibold text-[#111919]">
+                                  {q.topic}
+                                </span>
+                                <span className="text-xs text-[#CBD5D4]">·</span>
+                                <span className="text-xs font-mono text-[#526362]">
+                                  {q.targetRepoOrSkill}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleCopyQuestion(q.question, q.id)}
+                                className="px-2.5 py-1 text-[11px] font-medium text-[#0B4F4A] bg-white border border-[#CBD5D4] hover:bg-[#EEF6F5] rounded-md transition-colors inline-flex items-center gap-1.5 shrink-0"
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-[#0B4F4A]" />
+                                    <span>Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3" />
+                                    <span>Copy Prompt</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            <p className="text-base font-semibold text-[#111919] leading-snug">
+                              “{q.question}”
+                            </p>
+
+                            <div className="p-3 bg-white border border-[#E2E8E7] rounded-lg text-xs text-[#526362] flex items-start gap-2">
+                              <span className="font-semibold text-[#0B4F4A] shrink-0">Motivating Evidence:</span>
+                              <span className="leading-relaxed">{q.motivatingEvidence}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. Tab 4: Architecture & Engineering Rigor */}
+                {reportViewTab === 'tech-tree' && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-base font-bold text-[#111919] mb-1">
+                        Repository Engineering Rigor Signals
+                      </h3>
+                      <p className="text-xs text-[#526362]">
+                        Automated inspection of testing frameworks, CI/CD pipelines, containerization, and configuration integrity
+                      </p>
+                    </div>
+
+                    <EngineeringRigorGrid
+                      hasTests={hasTests}
+                      testFilesCount={testFilesCount}
+                      hasCiCd={hasCiCd}
+                      hasContainer={hasContainer}
+                      hasTypes={hasTypes}
+                      manifestsCount={repos.reduce((acc, r) => acc + (r.meaningfulFilePaths.some((f) => /package\.json|pyproject|cargo|go\.mod/i.test(f)) ? 1 : 0), 0)}
+                    />
+
+                    <AuthorshipAttributionGauge
+                      ownerCommits={candidateOverview.totalAttributedCommits}
+                      totalCommits={repos.reduce((acc, r) => acc + r.commits.length, 0)}
+                      ownerLogin={candidateOverview.username}
+                      distinctAuthorsCount={2}
+                    />
+
+                    {/* Repository List with Attribution */}
+                    <div className="space-y-3 pt-2">
+                      <h4 className="text-sm font-semibold text-[#111919]">
+                        Analyzed Repositories ({repos.length})
+                      </h4>
+                      <div className="divide-y divide-[#E2E8E7] border border-[#E2E8E7] rounded-xl overflow-hidden bg-white text-xs">
+                        {repos.map((r) => (
+                          <div
+                            key={r.name}
+                            className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#F8F9F8] transition-colors"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-[#111919]">{r.name}</span>
+                                <span
+                                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold ${
+                                    r.isFork
+                                      ? 'bg-[#FBF7EE] text-[#B45309]'
+                                      : 'bg-[#EEF6F5] text-[#0B4F4A]'
+                                  }`}
+                                >
+                                  {r.isFork ? 'Fork (Isolated)' : 'Original Repo'}
+                                </span>
+                                {r.primaryLanguage && (
+                                  <span className="text-[#526362]">· {r.primaryLanguage}</span>
+                                )}
+                              </div>
+                              <p className="text-[#526362] line-clamp-1">
+                                {r.description || 'No description provided.'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-4 text-right font-mono shrink-0">
+                              <div>
+                                <div className="font-bold text-[#0B4F4A]">
+                                  {r.candidateAttributedCommits} / {r.commits.length}
+                                </div>
+                                <div className="text-[10px] text-[#526362]">attributed commits</div>
+                              </div>
+                              <a
+                                href={r.htmlUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2.5 py-1 text-xs text-[#0B4F4A] hover:bg-[#EEF6F5] border border-[#C5DDD9] rounded-md inline-flex items-center gap-1"
+                              >
+                                <span>Code</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
         </div>
       )}
     </div>

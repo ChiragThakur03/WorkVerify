@@ -28,6 +28,8 @@ import {
   MatchScoreRing,
   EvidenceMeterBar,
   EmptyInspectionIllustration,
+  RequirementCoverageDonut,
+  TechStackDistributionBar,
 } from './VisualAssets';
 
 interface JobMatchingViewProps {
@@ -694,12 +696,23 @@ export const JobMatchingView: React.FC<JobMatchingViewProps> = ({
                   </div>
                 </div>
 
-                {/* Circular Visual Match Score Ring + Sub-scores */}
-                <div className="flex items-center gap-6 shrink-0 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-4">
-                  <MatchScoreRing
-                    score={activeReport.matchScore}
-                    label="JD Match"
-                  />
+                {/* Circular Visual Match Score Ring + Coverage Donut + Sub-scores */}
+                <div className="flex flex-col sm:flex-row items-center gap-6 shrink-0 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl p-4">
+                  <div className="flex items-center gap-5">
+                    <MatchScoreRing
+                      score={activeReport.matchScore}
+                      label="JD Match"
+                      customColor={activeReport.matchScore >= 70 ? '#0B4F4A' : activeReport.matchScore >= 45 ? '#D97706' : '#526362'}
+                    />
+                    <RequirementCoverageDonut
+                      strongCount={activeReport.strongestMatchingAreas.length}
+                      partialCount={activeReport.partialMatches.length}
+                      missingCount={activeReport.gapsToAddress.length}
+                      size={90}
+                      title="Met"
+                      showLegend={false}
+                    />
+                  </div>
                   <div className="space-y-2 w-44 text-xs">
                     <EvidenceMeterBar
                       label="Required Skills"
@@ -725,6 +738,19 @@ export const JobMatchingView: React.FC<JobMatchingViewProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Visual Tech Stack Breakdown */}
+              {activeReport.requirementEvaluations.length > 0 && (
+                <div className="p-4 bg-[#F8F9F8] border border-[#E2E8E7] rounded-xl">
+                  <TechStackDistributionBar
+                    items={activeReport.requirementEvaluations.map((r) => ({
+                      name: r.skillName,
+                      count: Math.max(10, r.skillEvidenceScore),
+                    }))}
+                    title="Required &amp; Preferred Skills Verification Profile"
+                  />
+                </div>
+              )}
 
               {/* Optional Interactive Skill Requirement Editor */}
               {showEditRequirements && (
